@@ -1,41 +1,28 @@
 # ============================================================
-# sentiment.py — Emotional Crystal Pro (final fixed version)
+# sentiment.py — Emotional Crystal Pro (FINAL FIXED VERSION)
 # ============================================================
 
 import streamlit as st
 import requests
-import pandas as pd      # ←←← 关键！NameError 的原因就是缺这个
+import pandas as pd
 import numpy as np
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-
-# ============================================================
-# FIX: Ensure VADER lexicon exists
-# ============================================================
-
+# Ensure VADER lexicon
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
     nltk.download("vader_lexicon")
 
-
-# ============================================================
-# Initialize VADER
-# ============================================================
-
 _analyzer = SentimentIntensityAnalyzer()
 
 
 # ============================================================
-# Fetch NewsAPI
+# Fetch NewsAPI  (NO type annotations)
 # ============================================================
 
-def fetch_news_data(keyword: str) -> pd.DataFrame:
-    """
-    Fetch news from NewsAPI.
-    Returns DataFrame(timestamp, text, source)
-    """
+def fetch_news_data(keyword):
     if "NEWS_API_KEY" not in st.secrets:
         st.error("Missing NEWS_API_KEY in Streamlit Secrets.")
         return pd.DataFrame([])
@@ -49,18 +36,18 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
         "apiKey": st.secrets["NEWS_API_KEY"],
     }
 
-    r = requests.get(url, params=params).json()
-    articles = r.get("articles", [])
+    res = requests.get(url, params=params).json()
+    articles = res.get("articles", [])
 
     rows = []
     for a in articles:
-        title = a.get("title", "") or ""
-        desc = a.get("description", "") or ""
-        txt = (title + ". " + desc).strip()
+        title = (a.get("title") or "")
+        desc  = (a.get("description") or "")
+        text = f"{title}. {desc}".strip()
 
         rows.append({
             "timestamp": a.get("publishedAt", ""),
-            "text": txt,
+            "text": text,
             "source": a.get("source", {}).get("name", ""),
         })
 
@@ -68,18 +55,18 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
 
 
 # ============================================================
-# VADER Scores
+# VADER
 # ============================================================
 
-def vader_scores(text: str) -> dict:
+def vader_scores(text):
     return _analyzer.polarity_scores(str(text))
 
 
 # ============================================================
-# 20+ Emotion Classifier
+# 20+ emotion classifier
 # ============================================================
 
-def classify_emotion_expanded(row) -> str:
+def classify_emotion_expanded(row):
     c = row["compound"]
     pos = row["pos"]
     neg = row["neg"]
@@ -110,14 +97,14 @@ def classify_emotion_expanded(row) -> str:
 
 
 # ============================================================
-# Apply to DataFrame
+# Apply sentiment + emotion  (NO type annotations)
 # ============================================================
 
-def analyze_sentiment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def analyze_sentiment_dataframe(df):
     if df.empty:
         return df
 
-    score_df = df["text"].apply(vader_scores).apply(pd.Series)
-    df = pd.concat([df.reset_index(drop=True), score_df], axis=1)
+    scores = df["text"].apply(vader_scores).apply(pd.Series)
+    df = pd.concat([df.reset_index(drop=True), scores], axis=1)
     df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
     return df
