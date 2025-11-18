@@ -1,32 +1,45 @@
 # ============================================================
 # sentiment.py — Emotional Crystal Pro
+# Full VADER sentiment + 20-class emotion classifier (fixed)
 # ============================================================
 
 import streamlit as st
 import requests
-import pandas as pd          # <-- 必须有！
+import pandas as pd
+import numpy as np
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# --- FIX: ensure VADER lexicon exists ---
+
+# ============================================================
+# FIX 1: Ensure NLTK VADER lexicon exists (prevents LookupError)
+# ============================================================
+
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
     nltk.download("vader_lexicon")
 
-_analyzer = SentimentIntensityAnalyzer()
 
 # ============================================================
-# FETCH NEWS FROM NEWSAPI
+# Initialize VADER
+# ============================================================
+
+_analyzer = SentimentIntensityAnalyzer()
+
+
+# ============================================================
+# NEWS API FETCH
 # ============================================================
 
 def fetch_news_data(keyword: str) -> pd.DataFrame:
     """
-    Fetches news articles from NewsAPI using a keyword.
-    Returns DataFrame with columns: timestamp, text, source
+    Fetches news from NewsAPI.
+    Returns DataFrame(timestamp, text, source)
     """
+
     if "NEWS_API_KEY" not in st.secrets:
-        st.error("NEWS_API_KEY not set in Streamlit Secrets.")
+        st.error("Missing NEWS_API_KEY in Streamlit Secrets.")
         return pd.DataFrame()
 
     url = "https://newsapi.org/v2/everything"
@@ -34,8 +47,8 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
         "q": keyword,
         "language": "en",
         "sortBy": "publishedAt",
-        "apiKey": st.secrets["NEWS_API_KEY"],
         "pageSize": 50,
+        "apiKey": st.secrets["NEWS_API_KEY"],
     }
 
     r = requests.get(url, params=params).json()
@@ -45,7 +58,7 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
     for a in articles:
         title = a.get("title", "") or ""
         desc = a.get("description", "") or ""
-        txt = f"{title}. {desc}".strip()
+        txt = (title + ". " + desc).strip()
 
         rows.append({
             "timestamp": a.get("publishedAt", ""),
@@ -58,29 +71,21 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
 
 
 # ============================================================
-# RUN VADER AND RETURN NEG/NEU/POS/COMPOUND
+# VADER Sentiment Scores
 # ============================================================
 
 def vader_scores(text: str) -> dict:
-    """
-    Return VADER scores for a given text.
-    """
     return _analyzer.polarity_scores(str(text))
 
 
 
 # ============================================================
-# EXPANDED 20+ EMOTION CLASSIFIER
+# 20+ Emotion Classifier
 # ============================================================
 
 def classify_emotion_expanded(row) -> str:
     """
-    Full expanded emotion classifier using compound/pos/neg/neu rules.
-    Covers:
-    - joy, love, pride, hope
-    - calm, curiosity, surprise, trust, awe, nostalgia
-    - anger, fear, sadness, anxiety, disgust
-    - boredom, neutral, mixed
+    Expanded emotion classifier.
     """
 
     c = row["compound"]
@@ -88,93 +93,55 @@ def classify_emotion_expanded(row) -> str:
     neg = row["neg"]
     neu = row["neu"]
 
-    # ========================================================
-    # Strong Positive Emotions
-    # ========================================================
-    if c >= 0.75 and pos > 0.60:
-        return "joy"
-    if c >= 0.55 and pos > 0.45:
-        return "love"
-    if 0.45 <= c < 0.75 and pos > 0.35:
-        return "pride"
-    if 0.35 <= c < 0.55 and pos > 0.30:
-        return "hope"
+    # Strong Positive
+    if c >= 0.75 and pos > 0.60: return "joy"
+    if c >= 0.55 and pos > 0.45: return "love"
+    if 0.45 <= c < 0.75 and pos > 0.35: return "pride"
+    if 0.35 <= c < 0.55 and pos > 0.30: return "hope"
 
-    # ========================================================
-    # Moderate Positive / Neutral Blend
-    # ========================================================
-    # calm
-    if 0.15 <= c < 0.35 and neu > 0.35:
-        return "calm"
-    # curiosity
-    if 0.05 <= c < 0.25 and (neu > 0.30 or pos > 0.20):
-        return "curiosity"
-    # surprise
-    if pos > 0.25 and abs(c) < 0.20:
-        return "surprise"
-    # trust
-    if 0.10 <= c < 0.35 and pos > 0.25:
-        return "trust"
-    # awe
-    if c >= 0.20 and (pos > 0.20 and neu > 0.20):
-        return "awe"
-    # nostalgia
-    if neu >= 0.40 and (0 <= c < 0.20) and pos > 0.10:
-        return "nostalgia"
+    # Medium/Neutral Positive
+    if 0.15 <= c < 0.35 and neu > 0.35: return "calm"
+    if 0.05 <= c < 0.25 and (neu > 0.30 or pos > 0.20): return "curiosity"
+    if pos > 0.25 and abs(c) < 0.20: return "surprise"
+    ￼
+    if 0.10 <= c < 0.35 and pos > 0.25: return "trust"
+    if c >= 0.20 and (pos > 0.20 and neu > 0.20): return "awe"
+    if neu >= 0.40 and (0 <= c < 0.20) and pos > 0.10: return "nostalgia"
 
-    # ========================================================
-    # Negative Emotions
-    # ========================================================
-    # anger
-    if c <= -0.60 and neg > 0.40:
-        return "anger"
-    # fear
-    if -0.60 < c <= -0.25 and neg > 0.30:
-        return "fear"
-    # sadness
-    if -0.40 < c <= -0.05 and neu > 0.30:
-        return "sadness"
-    # anxiety
-    if -0.15 <= c <= 0.05 and neg > 0.20 and neu < 0.50:
-        return "anxiety"
-    # disgust
-    if neg > 0.35 and c < -0.10:
-        return "disgust"
+    # Negative
+    if c <= -0.60 and neg > 0.40: return "anger"
+    if -0.60 < c <= -0.25 and neg > 0.30: return "fear"
+    if -0.40 < c <= -0.05 and neu > 0.30: return "sadness"
+    if -0.15 <= c <= 0.05 and neg > 0.20 and neu < 0.50: return "anxiety"
+    if neg > 0.35 and c < -0.10: return "disgust"
 
-    # ========================================================
     # Neutral / Mixed
-    # ========================================================
-    if abs(c) < 0.05 and neu > 0.50:
-        return "neutral"
-
-    if neu > 0.45 and 0.05 <= abs(c) <= 0.15:
-        return "boredom"
+    if abs(c) < 0.05 and neu > 0.50: return "neutral"
+    if neu > 0.45 and 0.05 <= abs(c) <= 0.15: return "boredom"
 
     return "mixed"
 
 
 
 # ============================================================
-# APPLY EMOTION CLASSIFICATION TO DF
+# Apply VADER + Emotion Classifier to DataFrame
 # ============================================================
 
 def analyze_sentiment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Takes a DataFrame with a 'text' column and computes:
-    - neg, neu, pos, compound using VADER
-    - emotion using expanded classifier
+    Adds columns:
+    - neg, neu, pos, compound
+    - emotion (20-class)
     """
 
     if df.empty:
         return df
 
-    # Compute VADER for each text
     scores = df["text"].apply(vader_scores).tolist()
     score_df = pd.DataFrame(scores)
 
     df = pd.concat([df.reset_index(drop=True), score_df], axis=1)
 
-    # Run emotion classifier
     df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
 
     return df
