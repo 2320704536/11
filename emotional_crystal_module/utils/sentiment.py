@@ -1,18 +1,17 @@
 # ============================================================
-# sentiment.py — Emotional Crystal Pro
-# Full VADER sentiment + 20-class emotion classifier (fixed)
+# sentiment.py — Emotional Crystal Pro (final fixed version)
 # ============================================================
 
 import streamlit as st
 import requests
-import pandas as pd
+import pandas as pd      # ←←← 关键！NameError 的原因就是缺这个
 import numpy as np
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 
 # ============================================================
-# FIX 1: Ensure NLTK VADER lexicon exists (prevents LookupError)
+# FIX: Ensure VADER lexicon exists
 # ============================================================
 
 try:
@@ -29,18 +28,17 @@ _analyzer = SentimentIntensityAnalyzer()
 
 
 # ============================================================
-# NEWS API FETCH
+# Fetch NewsAPI
 # ============================================================
 
 def fetch_news_data(keyword: str) -> pd.DataFrame:
     """
-    Fetches news from NewsAPI.
+    Fetch news from NewsAPI.
     Returns DataFrame(timestamp, text, source)
     """
-
     if "NEWS_API_KEY" not in st.secrets:
         st.error("Missing NEWS_API_KEY in Streamlit Secrets.")
-        return pd.DataFrame()
+        return pd.DataFrame([])
 
     url = "https://newsapi.org/v2/everything"
     params = {
@@ -69,14 +67,12 @@ def fetch_news_data(keyword: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-
 # ============================================================
-# VADER Sentiment Scores
+# VADER Scores
 # ============================================================
 
 def vader_scores(text: str) -> dict:
     return _analyzer.polarity_scores(str(text))
-
 
 
 # ============================================================
@@ -84,64 +80,44 @@ def vader_scores(text: str) -> dict:
 # ============================================================
 
 def classify_emotion_expanded(row) -> str:
-    """
-    Expanded emotion classifier.
-    """
-
     c = row["compound"]
     pos = row["pos"]
     neg = row["neg"]
     neu = row["neu"]
 
-    # Strong Positive
     if c >= 0.75 and pos > 0.60: return "joy"
     if c >= 0.55 and pos > 0.45: return "love"
     if 0.45 <= c < 0.75 and pos > 0.35: return "pride"
     if 0.35 <= c < 0.55 and pos > 0.30: return "hope"
 
-    # Medium/Neutral Positive
     if 0.15 <= c < 0.35 and neu > 0.35: return "calm"
     if 0.05 <= c < 0.25 and (neu > 0.30 or pos > 0.20): return "curiosity"
     if pos > 0.25 and abs(c) < 0.20: return "surprise"
-    ￼
     if 0.10 <= c < 0.35 and pos > 0.25: return "trust"
     if c >= 0.20 and (pos > 0.20 and neu > 0.20): return "awe"
     if neu >= 0.40 and (0 <= c < 0.20) and pos > 0.10: return "nostalgia"
 
-    # Negative
     if c <= -0.60 and neg > 0.40: return "anger"
     if -0.60 < c <= -0.25 and neg > 0.30: return "fear"
     if -0.40 < c <= -0.05 and neu > 0.30: return "sadness"
     if -0.15 <= c <= 0.05 and neg > 0.20 and neu < 0.50: return "anxiety"
     if neg > 0.35 and c < -0.10: return "disgust"
 
-    # Neutral / Mixed
     if abs(c) < 0.05 and neu > 0.50: return "neutral"
     if neu > 0.45 and 0.05 <= abs(c) <= 0.15: return "boredom"
 
     return "mixed"
 
 
-
 # ============================================================
-# Apply VADER + Emotion Classifier to DataFrame
+# Apply to DataFrame
 # ============================================================
 
 def analyze_sentiment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds columns:
-    - neg, neu, pos, compound
-    - emotion (20-class)
-    """
-
     if df.empty:
         return df
 
-    scores = df["text"].apply(vader_scores).tolist()
-    score_df = pd.DataFrame(scores)
-
+    score_df = df["text"].apply(vader_scores).apply(pd.Series)
     df = pd.concat([df.reset_index(drop=True), score_df], axis=1)
-
     df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
-
     return df
