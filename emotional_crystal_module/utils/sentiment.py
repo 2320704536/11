@@ -1,6 +1,7 @@
 # ============================================================
 # sentiment.py — Emotional Crystal Pro (FINAL FIXED VERSION)
 # ============================================================
+from __future__ import annotations   # ← 关键：让类型注解惰性解析，避免 NameError
 
 import streamlit as st
 import requests
