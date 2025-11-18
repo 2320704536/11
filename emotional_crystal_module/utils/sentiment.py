@@ -1,23 +1,14 @@
-# ============================================================
-# sentiment.py — Emotional Crystal Pro
-# ============================================================
-
-import streamlit as st
-import requests
-import pandas as pd
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# -------------------------------------------
-# FIX: Ensure VADER lexicon exists
-# -------------------------------------------
+# --- 必须加入：自动下载 VADER lexicon ---
 try:
     nltk.data.find("sentiment/vader_lexicon.zip")
 except LookupError:
     nltk.download("vader_lexicon")
 
-# Initialize analyzer AFTER ensuring lexicon exists
 _analyzer = SentimentIntensityAnalyzer()
+
 
 
 
