@@ -1,39 +1,181 @@
+# ============================================================
+# sentiment.py — Emotional Crystal Pro
+# Full VADER sentiment + 20-class emotion classifier
+# ============================================================
 
+import streamlit as st
 import requests
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import pandas as pd
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+import numpy as np
 
-analyzer = SentimentIntensityAnalyzer()
 
-def fetch_news(keyword):
+# ============================================================
+# INITIALIZE VADER ANALYZER
+# ============================================================
+
+_analyzer = SentimentIntensityAnalyzer()
+
+
+# ============================================================
+# FETCH NEWS FROM NEWSAPI
+# ============================================================
+
+def fetch_news_data(keyword: str) -> pd.DataFrame:
+    """
+    Fetches news articles from NewsAPI using a keyword.
+    Returns DataFrame with columns: timestamp, text, source
+    """
+    if "NEWS_API_KEY" not in st.secrets:
+        st.error("NEWS_API_KEY not set in Streamlit Secrets.")
+        return pd.DataFrame()
+
     url = "https://newsapi.org/v2/everything"
-    params = {"q":keyword,"sortBy":"publishedAt","language":"en"}
-    # API key will come from st.secrets in app
-    import streamlit as st
-    params["apiKey"] = st.secrets["NEWS_API_KEY"]
-    r = requests.get(url,params=params).json()
-    rows=[]
-    for a in r.get("articles",[]):
-        txt=(a.get("title","") or "")+" "+(a.get("description","") or "")
+    params = {
+        "q": keyword,
+        "language": "en",
+        "sortBy": "publishedAt",
+        "apiKey": st.secrets["NEWS_API_KEY"],
+        "pageSize": 50,
+    }
+
+    r = requests.get(url, params=params).json()
+    articles = r.get("articles", [])
+
+    rows = []
+    for a in articles:
+        title = a.get("title", "") or ""
+        desc = a.get("description", "") or ""
+        txt = f"{title}. {desc}".strip()
+
         rows.append({
-            "timestamp":a.get("publishedAt",""),
-            "text":txt,
-            "source":a.get("source",{}).get("name","")
+            "timestamp": a.get("publishedAt", ""),
+            "text": txt,
+            "source": a.get("source", {}).get("name", ""),
         })
+
     return pd.DataFrame(rows)
 
-def classify(row):
-    c=row['compound']
-    if c>0.6: return "joy"
-    if c>0.3: return "love"
-    if c>0: return "calm"
-    if c<-0.5: return "anger"
-    if c<0: return "sadness"
-    return "neutral"
 
-def analyze_dataframe(df):
-    if df.empty: return df
-    s=df['text'].apply(analyzer.polarity_scores).tolist()
-    df[['neg','neu','pos','compound']] = pd.DataFrame(s)
-    df['emotion']=df.apply(classify,axis=1)
+
+# ============================================================
+# RUN VADER AND RETURN NEG/NEU/POS/COMPOUND
+# ============================================================
+
+def vader_scores(text: str) -> dict:
+    """
+    Return VADER scores for a given text.
+    """
+    return _analyzer.polarity_scores(str(text))
+
+
+
+# ============================================================
+# EXPANDED 20+ EMOTION CLASSIFIER
+# ============================================================
+
+def classify_emotion_expanded(row) -> str:
+    """
+    Full expanded emotion classifier using compound/pos/neg/neu rules.
+    Covers:
+    - joy, love, pride, hope
+    - calm, curiosity, surprise, trust, awe, nostalgia
+    - anger, fear, sadness, anxiety, disgust
+    - boredom, neutral, mixed
+    """
+
+    c = row["compound"]
+    pos = row["pos"]
+    neg = row["neg"]
+    neu = row["neu"]
+
+    # ========================================================
+    # Strong Positive Emotions
+    # ========================================================
+    if c >= 0.75 and pos > 0.60:
+        return "joy"
+    if c >= 0.55 and pos > 0.45:
+        return "love"
+    if 0.45 <= c < 0.75 and pos > 0.35:
+        return "pride"
+    if 0.35 <= c < 0.55 and pos > 0.30:
+        return "hope"
+
+    # ========================================================
+    # Moderate Positive / Neutral Blend
+    # ========================================================
+    # calm
+    if 0.15 <= c < 0.35 and neu > 0.35:
+        return "calm"
+    # curiosity
+    if 0.05 <= c < 0.25 and (neu > 0.30 or pos > 0.20):
+        return "curiosity"
+    # surprise
+    if pos > 0.25 and abs(c) < 0.20:
+        return "surprise"
+    # trust
+    if 0.10 <= c < 0.35 and pos > 0.25:
+        return "trust"
+    # awe
+    if c >= 0.20 and (pos > 0.20 and neu > 0.20):
+        return "awe"
+    # nostalgia
+    if neu >= 0.40 and (0 <= c < 0.20) and pos > 0.10:
+        return "nostalgia"
+
+    # ========================================================
+    # Negative Emotions
+    # ========================================================
+    # anger
+    if c <= -0.60 and neg > 0.40:
+        return "anger"
+    # fear
+    if -0.60 < c <= -0.25 and neg > 0.30:
+        return "fear"
+    # sadness
+    if -0.40 < c <= -0.05 and neu > 0.30:
+        return "sadness"
+    # anxiety
+    if -0.15 <= c <= 0.05 and neg > 0.20 and neu < 0.50:
+        return "anxiety"
+    # disgust
+    if neg > 0.35 and c < -0.10:
+        return "disgust"
+
+    # ========================================================
+    # Neutral / Mixed
+    # ========================================================
+    if abs(c) < 0.05 and neu > 0.50:
+        return "neutral"
+
+    if neu > 0.45 and 0.05 <= abs(c) <= 0.15:
+        return "boredom"
+
+    return "mixed"
+
+
+
+# ============================================================
+# APPLY EMOTION CLASSIFICATION TO DF
+# ============================================================
+
+def analyze_sentiment_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Takes a DataFrame with a 'text' column and computes:
+    - neg, neu, pos, compound using VADER
+    - emotion using expanded classifier
+    """
+
+    if df.empty:
+        return df
+
+    # Compute VADER for each text
+    scores = df["text"].apply(vader_scores).tolist()
+    score_df = pd.DataFrame(scores)
+
+    df = pd.concat([df.reset_index(drop=True), score_df], axis=1)
+
+    # Run emotion classifier
+    df["emotion"] = df.apply(classify_emotion_expanded, axis=1)
+
     return df
