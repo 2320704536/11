@@ -2,9 +2,13 @@
 # Emotional Crystal — Full Professional Version (Performance Optimized)
 # app.py — Main Streamlit Application
 # ============================================================
-import sys, os
+import sys
+import os
+
+# 强制把 emotional_crystal_module 加入 Python 模块路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
