@@ -20,9 +20,6 @@ except LookupError:
 _analyzer = SentimentIntensityAnalyzer()
 
 
-
-
-
 # ============================================================
 # FETCH NEWS FROM NEWSAPI
 # ============================================================
